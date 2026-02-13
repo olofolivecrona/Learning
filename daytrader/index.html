@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daytrader</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f0f0f0;
+      font-family: Arial, sans-serif;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .box {
+      width: 420px;
+      height: 260px;
+      background: #ffffff;
+      border: 1px solid #d9d9d9;
+      padding: 12px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      color: #333333;
+    }
+
+    .stat {
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+    }
+
+    .stat-label {
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-weight: 700;
+    }
+
+    .price-up {
+      color: #28a745;
+    }
+
+    .price-down {
+      color: #dc3545;
+    }
+
+    .price-flat {
+      color: #333333;
+    }
+
+    .chart {
+      width: 100%;
+      height: calc(100% - 28px);
+      display: block;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .button-column {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    button {
+      border: none;
+      color: #ffffff;
+      font-size: 16px;
+      padding: 10px 24px;
+      cursor: pointer;
+      border-radius: 4px;
+      text-transform: lowercase;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .buy {
+      background: #28a745;
+    }
+
+    .sell {
+      background: #dc3545;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="box">
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-label">cash</span>
+          <span class="stat-value" id="available-to-invest">10.000</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">price</span>
+          <span class="stat-value" id="asset-price">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">shares</span>
+          <span class="stat-value" id="owned-shares">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">value</span>
+          <span class="stat-value" id="portfolio-value">0</span>
+        </div>
+      </div>
+      <svg class="chart" viewBox="0 0 396 236" xmlns="http://www.w3.org/2000/svg" aria-label="Asset value chart">
+        <rect x="0" y="0" width="396" height="236" fill="#ffffff" />
+
+        <g stroke="#ebebeb" stroke-width="1">
+          <line x1="0" y1="39" x2="396" y2="39" />
+          <line x1="0" y1="78" x2="396" y2="78" />
+          <line x1="0" y1="117" x2="396" y2="117" />
+          <line x1="0" y1="156" x2="396" y2="156" />
+          <line x1="0" y1="195" x2="396" y2="195" />
+          <line x1="66" y1="0" x2="66" y2="236" />
+          <line x1="132" y1="0" x2="132" y2="236" />
+          <line x1="198" y1="0" x2="198" y2="236" />
+          <line x1="264" y1="0" x2="264" y2="236" />
+          <line x1="330" y1="0" x2="330" y2="236" />
+        </g>
+
+        <polyline
+          id="price-line"
+          fill="none"
+          stroke="#2e7d32"
+          stroke-width="3"
+          points="0,185 30,176 60,182 90,162 120,168 150,150 180,138 210,146 240,121 270,108 300,112 330,84 360,76 396,58"
+        />
+      </svg>
+    </div>
+    <div class="buttons">
+      <div class="button-column">
+        <button class="buy" id="buy-button">buy 1</button>
+        <button class="buy" id="buy-10-button">buy 10</button>
+        <button class="buy" id="all-in-button">all in</button>
+      </div>
+      <div class="button-column">
+        <button class="sell" id="sell-button">sell 1</button>
+        <button class="sell" id="sell-10-button">sell 10</button>
+        <button class="sell" id="sell-all-button">sell all</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const chartWidth = 396;
+    const chartHeight = 236;
+    const chartPadding = 20;
+    const pointCount = 40;
+    const xStep = chartWidth / (pointCount - 1);
+
+    const prices = [];
+    let currentValue = 100;
+
+    for (let i = 0; i < pointCount; i += 1) {
+      currentValue *= 1 + (Math.random() - 0.5) * 0.08;
+      prices.push(currentValue);
+    }
+
+    const line = document.getElementById("price-line");
+    const availableToInvestElement = document.getElementById("available-to-invest");
+    const assetPriceElement = document.getElementById("asset-price");
+    const ownedSharesElement = document.getElementById("owned-shares");
+    const portfolioValueElement = document.getElementById("portfolio-value");
+    const buyButton = document.getElementById("buy-button");
+    const buy10Button = document.getElementById("buy-10-button");
+    const allInButton = document.getElementById("all-in-button");
+    const sellButton = document.getElementById("sell-button");
+    const sell10Button = document.getElementById("sell-10-button");
+    const sellAllButton = document.getElementById("sell-all-button");
+
+    let availableToInvest = 10000;
+    let assetUnits = 0;
+    let lastPriceDirection = 0;
+    let marketCrashMode = false;
+    let marketSurgeMode = false;
+    const epsilon = 0.000001;
+
+    function getCurrentPrice() {
+      return prices[prices.length - 1];
+    }
+
+    function getPortfolioValue() {
+      return assetUnits * getCurrentPrice();
+    }
+
+    function formatInvestment(value) {
+      const isWholeNumber = Number.isInteger(value);
+      return value.toLocaleString("de-DE", {
+        minimumFractionDigits: isWholeNumber ? 0 : 2,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function renderStats() {
+      const currentPrice = getCurrentPrice();
+      const portfolioValue = getPortfolioValue();
+
+      availableToInvestElement.textContent = formatInvestment(availableToInvest);
+      assetPriceElement.textContent = formatInvestment(currentPrice);
+      ownedSharesElement.textContent = formatInvestment(assetUnits);
+      portfolioValueElement.textContent = formatInvestment(portfolioValue);
+
+      assetPriceElement.classList.remove("price-up", "price-down", "price-flat");
+      if (lastPriceDirection > 0) {
+        assetPriceElement.classList.add("price-up");
+      } else if (lastPriceDirection < 0) {
+        assetPriceElement.classList.add("price-down");
+      } else {
+        assetPriceElement.classList.add("price-flat");
+      }
+
+      buyButton.disabled = availableToInvest + epsilon < currentPrice;
+      buy10Button.disabled = availableToInvest + epsilon < currentPrice * 10;
+      allInButton.disabled = availableToInvest + epsilon < currentPrice;
+      sellButton.disabled = assetUnits <= epsilon;
+      sell10Button.disabled = assetUnits + epsilon < 10;
+      sellAllButton.disabled = assetUnits <= epsilon;
+    }
+
+    buyButton.addEventListener("click", () => {
+      const currentPrice = getCurrentPrice();
+      if (availableToInvest + epsilon < currentPrice) {
+        return;
+      }
+
+      availableToInvest -= currentPrice;
+      assetUnits += 1;
+
+      if (availableToInvest < epsilon) {
+        availableToInvest = 0;
+      }
+
+      renderStats();
+    });
+
+    buy10Button.addEventListener("click", () => {
+      const currentPrice = getCurrentPrice();
+      const requiredAmount = currentPrice * 10;
+      if (availableToInvest + epsilon < requiredAmount) {
+        return;
+      }
+
+      availableToInvest -= requiredAmount;
+      assetUnits += 10;
+
+      if (availableToInvest < epsilon) {
+        availableToInvest = 0;
+      }
+
+      renderStats();
+    });
+
+    allInButton.addEventListener("click", () => {
+      const currentPrice = getCurrentPrice();
+      if (availableToInvest + epsilon < currentPrice || currentPrice <= epsilon) {
+        return;
+      }
+
+      const sharesToBuy = Math.floor(availableToInvest / currentPrice);
+      if (sharesToBuy <= 0) {
+        return;
+      }
+
+      availableToInvest -= sharesToBuy * currentPrice;
+      assetUnits += sharesToBuy;
+
+      if (availableToInvest < epsilon) {
+        availableToInvest = 0;
+      }
+
+      marketCrashMode = true;
+      marketSurgeMode = false;
+
+      renderStats();
+    });
+
+    sell10Button.addEventListener("click", () => {
+      if (assetUnits + epsilon < 10) {
+        return;
+      }
+
+      const currentPrice = getCurrentPrice();
+      assetUnits -= 10;
+      availableToInvest += 10 * currentPrice;
+
+      if (assetUnits < epsilon) {
+        assetUnits = 0;
+      }
+
+      renderStats();
+    });
+
+    sellButton.addEventListener("click", () => {
+      if (assetUnits <= epsilon) {
+        return;
+      }
+
+      const currentPrice = getCurrentPrice();
+      const unitsToSell = assetUnits < 1 ? assetUnits : 1;
+      assetUnits -= unitsToSell;
+      availableToInvest += unitsToSell * currentPrice;
+
+      if (assetUnits < epsilon) {
+        assetUnits = 0;
+      }
+
+      renderStats();
+    });
+
+    sellAllButton.addEventListener("click", () => {
+      if (assetUnits <= epsilon) {
+        return;
+      }
+
+      const currentPrice = getCurrentPrice();
+      const unitsToSell = assetUnits;
+      assetUnits = 0;
+      availableToInvest += unitsToSell * currentPrice;
+
+      marketSurgeMode = true;
+      marketCrashMode = false;
+
+      renderStats();
+    });
+
+    function redrawLine() {
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const priceRange = maxPrice - minPrice || 1;
+      const drawableHeight = chartHeight - chartPadding * 2;
+
+      const points = prices
+        .map((value, index) => {
+          const normalized = (value - minPrice) / priceRange;
+          const y = chartHeight - chartPadding - normalized * drawableHeight;
+          return `${(index * xStep).toFixed(2)},${y.toFixed(2)}`;
+        })
+        .join(" ");
+      line.setAttribute("points", points);
+    }
+
+    function tick() {
+      const lastValue = prices[prices.length - 1];
+      let nextValue;
+
+      if (marketCrashMode) {
+        const moveSize = Math.random() * 0.12;
+        const moveDown = Math.random() < (10 / 11);
+        nextValue = moveDown
+          ? lastValue * (1 - moveSize)
+          : lastValue * (1 + moveSize);
+      } else if (marketSurgeMode) {
+        const moveSize = Math.random() * 0.12;
+        const moveUp = Math.random() < (10 / 11);
+        nextValue = moveUp
+          ? lastValue * (1 + moveSize)
+          : lastValue * (1 - moveSize);
+      } else {
+        nextValue = lastValue * (1 + (Math.random() - 0.5) * 0.12);
+      }
+
+      if (nextValue < 5) {
+        marketCrashMode = false;
+      }
+
+      if (nextValue >= 100) {
+        marketSurgeMode = false;
+      }
+
+      lastPriceDirection = Math.sign(nextValue - lastValue);
+
+      prices.shift();
+      prices.push(nextValue);
+      renderStats();
+      redrawLine();
+    }
+
+    renderStats();
+    redrawLine();
+    setInterval(tick, 100);
+  </script>
+</body>
+</html>
