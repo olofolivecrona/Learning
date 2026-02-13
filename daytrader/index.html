@@ -22,6 +22,12 @@
       gap: 16px;
     }
 
+    .bill-timer {
+      font-size: 20px;
+      font-weight: 700;
+      color: #333333;
+    }
+
     .box {
       width: 420px;
       height: 260px;
@@ -106,10 +112,122 @@
     .sell {
       background: #dc3545;
     }
+
+    .crash-banner {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: 72px;
+      font-weight: 800;
+      color: #dc3545;
+      text-shadow: 0 0 14px rgba(220, 53, 69, 0.7);
+      z-index: 1000;
+      animation: crash-flash 0.35s steps(1, end) infinite;
+    }
+
+    .crash-banner.active {
+      display: flex;
+    }
+
+    .surge-banner {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: 72px;
+      font-weight: 800;
+      color: #28a745;
+      text-shadow: 0 0 14px rgba(40, 167, 69, 0.7);
+      z-index: 999;
+      animation: surge-flash 0.35s steps(1, end) infinite;
+    }
+
+    .surge-banner.active {
+      display: flex;
+    }
+
+    .due-banner {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: 62px;
+      font-weight: 800;
+      color: #ff9800;
+      text-shadow: 0 0 14px rgba(255, 152, 0, 0.7);
+      z-index: 1002;
+      text-transform: uppercase;
+      text-align: center;
+      width: 100vw;
+      padding: 0 24px;
+      box-sizing: border-box;
+    }
+
+    .due-banner.active {
+      display: flex;
+    }
+
+    .game-over {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 10px;
+      color: #dc3545;
+      background: #ffffff;
+    }
+
+    .game-over-main {
+      font-size: 52px;
+      font-weight: 800;
+    }
+
+    .game-over-sub {
+      font-size: 42px;
+      font-weight: 800;
+    }
+
+    .game-over-time {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    @keyframes crash-flash {
+      0%, 49% {
+        opacity: 1;
+      }
+      50%, 100% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes surge-flash {
+      0%, 49% {
+        opacity: 1;
+      }
+      50%, 100% {
+        opacity: 0;
+      }
+    }
+
   </style>
 </head>
 <body>
+  <div class="crash-banner" id="crash-banner">MARKET CRASH!</div>
+  <div class="surge-banner" id="surge-banner">MARKET SURGE!</div>
+  <div class="due-banner" id="due-banner"></div>
   <div class="container">
+    <div class="bill-timer" id="bill-timer">Time until bill is due: 0</div>
     <div class="box">
       <div class="stats">
         <div class="stat">
@@ -174,12 +292,14 @@
     const chartPadding = 20;
     const pointCount = 40;
     const xStep = chartWidth / (pointCount - 1);
+    const normalMaxMove = 0.06;
+    const eventMaxMove = normalMaxMove * 3;
 
     const prices = [];
     let currentValue = 100;
 
     for (let i = 0; i < pointCount; i += 1) {
-      currentValue *= 1 + (Math.random() - 0.5) * 0.08;
+      currentValue *= 1 + (Math.random() * 2 - 1) * normalMaxMove;
       prices.push(currentValue);
     }
 
@@ -194,13 +314,252 @@
     const sellButton = document.getElementById("sell-button");
     const sell10Button = document.getElementById("sell-10-button");
     const sellAllButton = document.getElementById("sell-all-button");
+    const crashBanner = document.getElementById("crash-banner");
+    const surgeBanner = document.getElementById("surge-banner");
+    const dueBanner = document.getElementById("due-banner");
+    const billTimerElement = document.getElementById("bill-timer");
 
     let availableToInvest = 10000;
     let assetUnits = 0;
     let lastPriceDirection = 0;
     let marketCrashMode = false;
     let marketSurgeMode = false;
+    let marketSurgeTarget = 100;
+    let currentBill = null;
+    let timeUntilBillDue = 0;
+    let gameOver = false;
+    let gameOverPending = false;
+    let priceIntervalId = null;
+    let billIntervalId = null;
+    let audioContext = null;
+    let crashSoundIntervalId = null;
+    let surgeSoundIntervalId = null;
+    const gameStartTime = Date.now();
     const epsilon = 0.000001;
+
+    function ensureAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+    }
+
+    function playTone({ frequency, duration, type = "sine", volume = 0.07, sweepTo = null }) {
+      if (!audioContext) {
+        return;
+      }
+
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      const startTime = audioContext.currentTime;
+      const endTime = startTime + duration;
+
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, startTime);
+      if (sweepTo !== null) {
+        oscillator.frequency.exponentialRampToValueAtTime(sweepTo, endTime);
+      }
+
+      gainNode.gain.setValueAtTime(0.0001, startTime);
+      gainNode.gain.exponentialRampToValueAtTime(volume, startTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.start(startTime);
+      oscillator.stop(endTime);
+    }
+
+    function startCrashSound() {
+      if (crashSoundIntervalId !== null) {
+        return;
+      }
+
+      ensureAudioContext();
+      playTone({ frequency: 620, duration: 0.14, type: "square", volume: 0.09 });
+      crashSoundIntervalId = setInterval(() => {
+        playTone({ frequency: 620, duration: 0.14, type: "square", volume: 0.09 });
+      }, 260);
+    }
+
+    function stopCrashSound() {
+      if (crashSoundIntervalId !== null) {
+        clearInterval(crashSoundIntervalId);
+        crashSoundIntervalId = null;
+      }
+    }
+
+    function startSurgeSound() {
+      if (surgeSoundIntervalId !== null) {
+        return;
+      }
+
+      ensureAudioContext();
+      playTone({ frequency: 320, sweepTo: 880, duration: 0.22, type: "triangle", volume: 0.07 });
+      surgeSoundIntervalId = setInterval(() => {
+        playTone({ frequency: 320, sweepTo: 880, duration: 0.22, type: "triangle", volume: 0.07 });
+      }, 340);
+    }
+
+    function stopSurgeSound() {
+      if (surgeSoundIntervalId !== null) {
+        clearInterval(surgeSoundIntervalId);
+        surgeSoundIntervalId = null;
+      }
+    }
+
+    function syncModeAudio() {
+      if (marketCrashMode) {
+        startCrashSound();
+      } else {
+        stopCrashSound();
+      }
+
+      if (marketSurgeMode) {
+        startSurgeSound();
+      } else {
+        stopSurgeSound();
+      }
+    }
+
+    function playDueSound(cost) {
+      ensureAudioContext();
+
+      if (cost >= 2000) {
+        playTone({ frequency: 220, duration: 0.14, type: "sawtooth", volume: 0.1 });
+        setTimeout(() => {
+          playTone({ frequency: 180, duration: 0.16, type: "sawtooth", volume: 0.1 });
+        }, 170);
+        setTimeout(() => {
+          playTone({ frequency: 220, duration: 0.14, type: "sawtooth", volume: 0.1 });
+        }, 360);
+      } else {
+        playTone({ frequency: 660, duration: 0.1, type: "triangle", volume: 0.08 });
+        setTimeout(() => {
+          playTone({ frequency: 880, duration: 0.14, type: "triangle", volume: 0.08 });
+        }, 130);
+      }
+    }
+
+    function playBuySound() {
+      ensureAudioContext();
+      playTone({ frequency: 880, duration: 0.06, type: "triangle", volume: 0.07 });
+      setTimeout(() => {
+        playTone({ frequency: 1320, duration: 0.12, type: "triangle", volume: 0.09 });
+      }, 70);
+    }
+
+    function playSellSound() {
+      ensureAudioContext();
+      playTone({ frequency: 740, duration: 0.08, type: "square", volume: 0.07 });
+      setTimeout(() => {
+        playTone({ frequency: 520, duration: 0.14, type: "square", volume: 0.09 });
+      }, 85);
+    }
+
+    const bills = [
+      { name: "alimony payment", cost: 2500 },
+      { name: "electrical bill", cost: 300 },
+      { name: "phone bill", cost: 180 },
+      { name: "netflix subscription", cost: 100 },
+      { name: "rent payment", cost: 1800 },
+      { name: "internet bill", cost: 150 },
+      { name: "car insurance payment", cost: 900 },
+      { name: "student loan payment", cost: 1300 },
+      { name: "medical bill", cost: 3200 },
+      { name: "property tax installment", cost: 5000 },
+    ];
+
+    function getRandomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function pickNextBill() {
+      currentBill = bills[getRandomInt(0, bills.length - 1)];
+      timeUntilBillDue = getRandomInt(5, 20);
+      renderBillTimer();
+    }
+
+    function renderBillTimer() {
+      if (!currentBill) {
+        return;
+      }
+
+      billTimerElement.textContent = `Time until ${currentBill.name} is due: ${timeUntilBillDue} (payment: ${formatInvestment(currentBill.cost)})`;
+    }
+
+    function showDueBanner(message) {
+      dueBanner.textContent = message;
+      dueBanner.classList.add("active");
+      setTimeout(() => {
+        dueBanner.classList.remove("active");
+      }, 2000);
+    }
+
+    function triggerGameOver() {
+      if (gameOver) {
+        return;
+      }
+
+      gameOver = true;
+      gameOverPending = false;
+      clearInterval(priceIntervalId);
+      clearInterval(billIntervalId);
+      stopCrashSound();
+      stopSurgeSound();
+      const survivedSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
+      document.body.innerHTML = `
+        <div class="game-over">
+          <div class="game-over-main">INSUFFICIENT CASH!</div>
+          <div class="game-over-sub">You died</div>
+          <div class="game-over-time">Seconds survived: ${survivedSeconds}</div>
+        </div>
+      `;
+    }
+
+    function processDueBill() {
+      if (!currentBill || gameOver) {
+        return;
+      }
+
+      playDueSound(currentBill.cost);
+      showDueBanner(`-${formatInvestment(currentBill.cost)}`);
+      availableToInvest -= currentBill.cost;
+      renderStats();
+
+      if (availableToInvest < 0) {
+        gameOverPending = true;
+        clearInterval(priceIntervalId);
+        clearInterval(billIntervalId);
+        setTimeout(() => {
+          triggerGameOver();
+        }, 1000);
+        return;
+      }
+
+      if (availableToInvest < epsilon) {
+        availableToInvest = 0;
+      }
+
+      pickNextBill();
+      renderStats();
+    }
+
+    function billTick() {
+      if (gameOver || gameOverPending) {
+        return;
+      }
+
+      timeUntilBillDue -= 1;
+      if (timeUntilBillDue <= 0) {
+        processDueBill();
+      }
+      renderBillTimer();
+    }
 
     function getCurrentPrice() {
       return prices[prices.length - 1];
@@ -219,6 +578,10 @@
     }
 
     function renderStats() {
+      if (gameOver || gameOverPending) {
+        return;
+      }
+
       const currentPrice = getCurrentPrice();
       const portfolioValue = getPortfolioValue();
 
@@ -242,9 +605,14 @@
       sellButton.disabled = assetUnits <= epsilon;
       sell10Button.disabled = assetUnits + epsilon < 10;
       sellAllButton.disabled = assetUnits <= epsilon;
+
+      crashBanner.classList.toggle("active", marketCrashMode);
+      surgeBanner.classList.toggle("active", marketSurgeMode);
+      syncModeAudio();
     }
 
     buyButton.addEventListener("click", () => {
+      ensureAudioContext();
       const currentPrice = getCurrentPrice();
       if (availableToInvest + epsilon < currentPrice) {
         return;
@@ -252,6 +620,7 @@
 
       availableToInvest -= currentPrice;
       assetUnits += 1;
+      playBuySound();
 
       if (availableToInvest < epsilon) {
         availableToInvest = 0;
@@ -261,6 +630,7 @@
     });
 
     buy10Button.addEventListener("click", () => {
+      ensureAudioContext();
       const currentPrice = getCurrentPrice();
       const requiredAmount = currentPrice * 10;
       if (availableToInvest + epsilon < requiredAmount) {
@@ -269,6 +639,7 @@
 
       availableToInvest -= requiredAmount;
       assetUnits += 10;
+      playBuySound();
 
       if (availableToInvest < epsilon) {
         availableToInvest = 0;
@@ -278,6 +649,7 @@
     });
 
     allInButton.addEventListener("click", () => {
+      ensureAudioContext();
       const currentPrice = getCurrentPrice();
       if (availableToInvest + epsilon < currentPrice || currentPrice <= epsilon) {
         return;
@@ -290,6 +662,7 @@
 
       availableToInvest -= sharesToBuy * currentPrice;
       assetUnits += sharesToBuy;
+      playBuySound();
 
       if (availableToInvest < epsilon) {
         availableToInvest = 0;
@@ -302,6 +675,7 @@
     });
 
     sell10Button.addEventListener("click", () => {
+      ensureAudioContext();
       if (assetUnits + epsilon < 10) {
         return;
       }
@@ -309,6 +683,7 @@
       const currentPrice = getCurrentPrice();
       assetUnits -= 10;
       availableToInvest += 10 * currentPrice;
+      playSellSound();
 
       if (assetUnits < epsilon) {
         assetUnits = 0;
@@ -318,6 +693,7 @@
     });
 
     sellButton.addEventListener("click", () => {
+      ensureAudioContext();
       if (assetUnits <= epsilon) {
         return;
       }
@@ -326,6 +702,7 @@
       const unitsToSell = assetUnits < 1 ? assetUnits : 1;
       assetUnits -= unitsToSell;
       availableToInvest += unitsToSell * currentPrice;
+      playSellSound();
 
       if (assetUnits < epsilon) {
         assetUnits = 0;
@@ -335,6 +712,7 @@
     });
 
     sellAllButton.addEventListener("click", () => {
+      ensureAudioContext();
       if (assetUnits <= epsilon) {
         return;
       }
@@ -343,9 +721,11 @@
       const unitsToSell = assetUnits;
       assetUnits = 0;
       availableToInvest += unitsToSell * currentPrice;
+      playSellSound();
 
       marketSurgeMode = true;
       marketCrashMode = false;
+      marketSurgeTarget = Math.max(100, currentPrice * 5);
 
       renderStats();
     });
@@ -367,30 +747,34 @@
     }
 
     function tick() {
+      if (gameOver) {
+        return;
+      }
+
       const lastValue = prices[prices.length - 1];
       let nextValue;
 
       if (marketCrashMode) {
-        const moveSize = Math.random() * 0.12;
+        const moveSize = Math.random() * eventMaxMove;
         const moveDown = Math.random() < (10 / 11);
         nextValue = moveDown
           ? lastValue * (1 - moveSize)
           : lastValue * (1 + moveSize);
       } else if (marketSurgeMode) {
-        const moveSize = Math.random() * 0.12;
+        const moveSize = Math.random() * eventMaxMove;
         const moveUp = Math.random() < (10 / 11);
         nextValue = moveUp
           ? lastValue * (1 + moveSize)
           : lastValue * (1 - moveSize);
       } else {
-        nextValue = lastValue * (1 + (Math.random() - 0.5) * 0.12);
+        nextValue = lastValue * (1 + (Math.random() * 2 - 1) * normalMaxMove);
       }
 
-      if (nextValue < 5) {
+      if (nextValue < 10) {
         marketCrashMode = false;
       }
 
-      if (nextValue >= 100) {
+      if (nextValue >= marketSurgeTarget) {
         marketSurgeMode = false;
       }
 
@@ -402,9 +786,11 @@
       redrawLine();
     }
 
+    pickNextBill();
     renderStats();
     redrawLine();
-    setInterval(tick, 100);
+    priceIntervalId = setInterval(tick, 100);
+    billIntervalId = setInterval(billTick, 1000);
   </script>
 </body>
 </html>
